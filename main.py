@@ -1,41 +1,33 @@
 import streamlit as st
-# import boto3  # Good to have for potential future local testing, though not strictly needed by the UI
 import requests
-import json
 import time
 import os
 import uuid
 
 # --- CONFIGURATION ---
-# IMPORTANT: Replace this with your actual API Gateway Invoke URL from the AWS Console
-# API_GATEWAY_BASE_URL = "https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/dev"  # e.g., https://a1b2c3d4e5.execute-api.us-east-1.amazonaws.com/dev
-API_GATEWAY_BASE_URL = "https://srqp8t40g7.execute-api.us-east-1.amazonaws.com/dev"  # e.g., https://a1b2c3d4e5.execute-api.us-east-1.amazonaws.com/dev
+API_GATEWAY_BASE_URL = "https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/dev" # Your API Gateway Invoke URL
 
-# --- UI Layout & State Management ---
-st.set_page_config(layout="wide", page_title="Wirevision AI")
-st.title("💡 Wirevision AI")
 
-# Use session state to keep track of jobs and selected instruction
+# --- UI LAYOUT & STATE MANAGEMENT ---
+st.set_page_config(layout="wide", page_title="Wire Vision AI")
+st.title("💡 Wire Vision AI")
+
+# Initialize session state variables to hold data across reruns
 if 'jobs' not in st.session_state:
     st.session_state.jobs = []
 if 'selected_job_details' not in st.session_state:
     st.session_state.selected_job_details = None
 
 
-# --- API Helper Functions ---
+# --- API HELPER FUNCTIONS ---
 
 def create_job_in_backend(filename, content_type, language):
     """Calls the POST /jobs endpoint to start the upload process."""
     try:
         url = f"{API_GATEWAY_BASE_URL}/jobs"
-        payload = {
-            "filename": filename,
-            "contentType": content_type,
-            "targetLanguage": language
-        }
-        st.info(f"Creating job for {filename}...")
+        payload = {"filename": filename, "contentType": content_type, "targetLanguage": language}
         response = requests.post(url, json=payload)
-        response.raise_for_status()
+        response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
         return response.json()
     except requests.exceptions.RequestException as e:
         st.error(f"Error creating job: {e}")
@@ -60,6 +52,7 @@ def get_jobs_from_backend():
         url = f"{API_GATEWAY_BASE_URL}/jobs"
         response = requests.get(url)
         response.raise_for_status()
+        # Sort jobs by timestamp, newest first, for a better UX
         sorted_jobs = sorted(response.json().get('jobs', []), key=lambda x: x.get('uploadTimestamp', ''), reverse=True)
         st.session_state.jobs = sorted_jobs
         st.toast("Job status refreshed!")
@@ -81,14 +74,14 @@ def get_job_details(job_id):
 
 
 def get_pdf_download_url(job_id):
-    """Calls the POST /jobs/{jobId}/download endpoint to get a PDF link."""
+    """Calls the GET /jobs/{jobId}/download endpoint to get a PDF link."""
     try:
         url = f"{API_GATEWAY_BASE_URL}/jobs/{job_id}/download"
-        response = requests.post(url)
+        response = requests.get(url)
         response.raise_for_status()
         return response.json().get('downloadUrl')
     except requests.exceptions.RequestException as e:
-        st.error(f"Error generating PDF: {e}")
+        st.error(f"Error generating PDF link: {e.response.text if e.response else e}")
         return None
 
 
@@ -98,10 +91,16 @@ def get_pdf_download_url(job_id):
 with st.container(border=True):
     st.subheader("1. Start a New Job")
 
+    # Language dropdown with flags for better UX
+    language_options = {
+        "en": "🇬🇧 English",
+        "es": "🇪🇸 Spanish",
+        "fr": "🇫🇷 French"
+    }
     target_language = st.selectbox(
         "Select Target Language for Instructions",
-        ("es", "fr"),
-        format_func=lambda x: {"es": "Spanish", "fr": "French"}.get(x, x.upper())
+        options=language_options.keys(),
+        format_func=lambda lang_code: language_options[lang_code]
     )
 
     uploaded_file = st.file_uploader("Upload Electrical Drawing", type=["png", "jpg", "jpeg"])
@@ -117,7 +116,7 @@ with st.container(border=True):
                     upload_success = upload_file_to_s3(job_info["uploadUrl"], uploaded_file, uploaded_file.type)
 
                 if upload_success:
-                    st.success(f"Job '{job_info['id']}' created and file uploaded. Refreshing status...")
+                    st.success(f"Job '{job_info['jobId']}' created. Refreshing status...")
                     time.sleep(2)  # Give a moment for the backend to update DynamoDB
                     get_jobs_from_backend()
         else:
@@ -132,47 +131,53 @@ with st.container(border=True):
         if st.button("Refresh ↻"):
             get_jobs_from_backend()
 
-    # Automatically refresh the job list on first load
+    # Automatically refresh the job list on the first load of the page
     if not st.session_state.jobs:
         get_jobs_from_backend()
 
-    if not st.session_state.jobs:
-        st.info("No jobs found. Upload a drawing to get started.")
-    else:
+    if st.session_state.jobs:
         # Table Header
-        c1, c2, c3, c4, c5, c6 = st.columns([3, 3, 1, 2, 2, 2])
+        c1, c2, c3, c4, c5 = st.columns([3, 3, 1, 2, 3])
         c1.markdown("**Job ID**")
         c2.markdown("**Filename**")
         c3.markdown("**Lang**")
         c4.markdown("**Status**")
-        c5.markdown("**View in App**")
-        c6.markdown("**Download PDF**")
+        c5.markdown("**Actions**")
         st.divider()
 
         # Table Rows
         for job in st.session_state.jobs:
-            c1, c2, c3, c4, c5, c6 = st.columns([3, 3, 1, 2, 2, 2])
-            c1.code(job.get('id'))
+            c1, c2, c3, c4, c5 = st.columns([3, 3, 1, 2, 3])
+
+            # Use 'id' from the job object, as this is the primary key from DynamoDB
+            job_id_from_db = job.get('id')
+            c1.code(job_id_from_db)
             c2.write(job.get('originalFilename'))
             c3.write(job.get('targetLanguage', 'N/A').upper())
 
             status = job.get('status', 'UNKNOWN')
             if status == "DONE":
                 c4.success("✅ DONE")
-                if c5.button("View", key=f"view_{job.get('id')}"):
-                    get_job_details(job.get('id'))
-                if c6.button("Generate PDF", key=f"pdf_{job.get('id')}"):
-                    with st.spinner("Generating PDF..."):
-                        download_url = get_pdf_download_url(job.get('id'))
+                action_cols = c5.columns(2)
+                # Pass the correct 'id' to the functions
+                if action_cols[0].button("View", key=f"view_{job_id_from_db}"):
+                    get_job_details(job_id_from_db)
+                if action_cols[1].button("PDF", key=f"pdf_{job_id_from_db}"):
+                    with st.spinner("Generating PDF link..."):
+                        download_url = get_pdf_download_url(job_id_from_db)
                         if download_url:
-                            # Use st.link_button for a clean UI element
-                            st.session_state[f"dl_{job.get('id')}"] = download_url
-            else:
+                            # Store the link in session state to persist it
+                            st.session_state[f"dl_{job_id_from_db}"] = download_url
+            elif status == "PENDING_PDF":
+                c4.info("📄 Generating PDF...")
+            elif status == "PROCESSING":
                 c4.warning("⏳ PROCESSING")
+            else:
+                c4.write(status)  # Handles PENDING_UPLOAD or FAILED states
 
-            # Display the download link if it has been generated
-            if f"dl_{job.get('id')}" in st.session_state:
-                c6.link_button("Click to Download", st.session_state[f"dl_{job.get('id')}"])
+            # Display the download link if it has been generated for this specific job
+            if f"dl_{job_id_from_db}" in st.session_state:
+                c5.link_button("Download PDF", st.session_state[f"dl_{job_id_from_db}"])
 
             st.divider()
 
@@ -187,21 +192,24 @@ if st.session_state.selected_job_details:
         with col_img:
             st.markdown("#### Original Drawing")
             if job_details.get('originalDrawingUrl'):
-                st.image(job_details.get('originalDrawingUrl'), use_column_width=True)
+                st.image(job_details.get('originalDrawingUrl'), use_container_width=True)
             else:
-                st.warning("Original drawing URL not found.")
+                st.warning("Original drawing URL not available.")
 
         with col_inst:
-            lang = job_details.get('instructions', {}).get('targetLanguage', 'en')
-            lang_name = {"es": "Spanish", "fr": "French", "en": "English"}.get(lang, "Translated")
+            instructions_obj = job_details.get('instructions', {})
+            lang = job_details.get('targetLanguage', 'en')
+            lang_name = {"en": "English", "es": "Spanish", "fr": "French"}.get(lang, lang.upper())
             st.markdown(f"#### Generated Instructions ({lang_name})")
 
-            instruction_key = f"translatedInstructions_{lang}"
-            instruction_text = job_details.get('instructions', {}).get(instruction_key)
+            if lang == 'en':
+                instruction_text = instructions_obj.get('englishInstructions')
+            else:
+                instruction_key = f"translatedInstructions_{lang}"
+                instruction_text = instructions_obj.get(instruction_key)
 
             if not instruction_text:
-                instruction_text = job_details.get('instructions', {}).get('englishInstructions',
-                                                                           "Instructions not available.")
+                instruction_text = instructions_obj.get('englishInstructions', "Instructions not available.")
 
-            # Use st.markdown to render the formatted text from the AI
+            # Use st.markdown to render the formatted text generated by the AI
             st.markdown(instruction_text)
