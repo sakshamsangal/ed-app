@@ -180,7 +180,7 @@ with st.container(border=True):
 if st.session_state.selected_job_details:
     with st.container(border=True):
         job_details = st.session_state.selected_job_details
-        st.subheader(f"3. Instruction Viewer for Job ID: `{job_details.get('id')}`")
+        st.subheader(f"3. Instruction Viewer for Job ID: `{job_details.get('jobId')}`")
 
         col_img, col_inst = st.columns(2)
 
