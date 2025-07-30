@@ -8,7 +8,8 @@ import uuid
 
 # --- CONFIGURATION ---
 # IMPORTANT: Replace this with your actual API Gateway Invoke URL from the AWS Console
-API_GATEWAY_BASE_URL = "https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/dev"  # e.g., https://a1b2c3d4e5.execute-api.us-east-1.amazonaws.com/dev
+# API_GATEWAY_BASE_URL = "https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/dev"  # e.g., https://a1b2c3d4e5.execute-api.us-east-1.amazonaws.com/dev
+API_GATEWAY_BASE_URL = "https://srqp8t40g7.execute-api.us-east-1.amazonaws.com/dev"  # e.g., https://a1b2c3d4e5.execute-api.us-east-1.amazonaws.com/dev
 
 # --- UI Layout & State Management ---
 st.set_page_config(layout="wide", page_title="Wirevision AI")
@@ -116,7 +117,7 @@ with st.container(border=True):
                     upload_success = upload_file_to_s3(job_info["uploadUrl"], uploaded_file, uploaded_file.type)
 
                 if upload_success:
-                    st.success(f"Job '{job_info['jobId']}' created and file uploaded. Refreshing status...")
+                    st.success(f"Job '{job_info['id']}' created and file uploaded. Refreshing status...")
                     time.sleep(2)  # Give a moment for the backend to update DynamoDB
                     get_jobs_from_backend()
         else:
@@ -151,27 +152,27 @@ with st.container(border=True):
         # Table Rows
         for job in st.session_state.jobs:
             c1, c2, c3, c4, c5, c6 = st.columns([3, 3, 1, 2, 2, 2])
-            c1.code(job.get('jobId'))
+            c1.code(job.get('id'))
             c2.write(job.get('originalFilename'))
             c3.write(job.get('targetLanguage', 'N/A').upper())
 
             status = job.get('status', 'UNKNOWN')
             if status == "DONE":
                 c4.success("✅ DONE")
-                if c5.button("View", key=f"view_{job.get('jobId')}"):
-                    get_job_details(job.get('jobId'))
-                if c6.button("Generate PDF", key=f"pdf_{job.get('jobId')}"):
+                if c5.button("View", key=f"view_{job.get('id')}"):
+                    get_job_details(job.get('id'))
+                if c6.button("Generate PDF", key=f"pdf_{job.get('id')}"):
                     with st.spinner("Generating PDF..."):
-                        download_url = get_pdf_download_url(job.get('jobId'))
+                        download_url = get_pdf_download_url(job.get('id'))
                         if download_url:
                             # Use st.link_button for a clean UI element
-                            st.session_state[f"dl_{job.get('jobId')}"] = download_url
+                            st.session_state[f"dl_{job.get('id')}"] = download_url
             else:
                 c4.warning("⏳ PROCESSING")
 
             # Display the download link if it has been generated
-            if f"dl_{job.get('jobId')}" in st.session_state:
-                c6.link_button("Click to Download", st.session_state[f"dl_{job.get('jobId')}"])
+            if f"dl_{job.get('id')}" in st.session_state:
+                c6.link_button("Click to Download", st.session_state[f"dl_{job.get('id')}"])
 
             st.divider()
 
@@ -179,7 +180,7 @@ with st.container(border=True):
 if st.session_state.selected_job_details:
     with st.container(border=True):
         job_details = st.session_state.selected_job_details
-        st.subheader(f"3. Instruction Viewer for Job ID: `{job_details.get('jobId')}`")
+        st.subheader(f"3. Instruction Viewer for Job ID: `{job_details.get('id')}`")
 
         col_img, col_inst = st.columns(2)
 

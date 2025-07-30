@@ -9,6 +9,7 @@ env/
 venv/
 .venv/
 env*
+python/
 dist/
 build/
 *.egg
